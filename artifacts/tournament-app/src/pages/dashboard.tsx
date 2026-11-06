@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Wallet, Trophy, Swords, TrendingUp, ArrowUpRight, ArrowDownRight, Clock, Target, ArrowRightLeft, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
 
 export default function Dashboard() {
-  const { data: dashboard, isLoading } = useGetDashboard();
+  const { data: dashboard, isLoading, isError, error, refetch } = useGetDashboard();
 
   if (isLoading) {
     return (
@@ -25,7 +26,33 @@ export default function Dashboard() {
     );
   }
 
-  if (!dashboard) return null;
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-display font-bold">Dashboard</h1>
+        <Alert variant="destructive">
+          <AlertTitle>Could not load your dashboard</AlertTitle>
+          <AlertDescription>
+            {error instanceof Error ? error.message : "The server returned an unexpected error."}
+          </AlertDescription>
+        </Alert>
+        <Button onClick={() => void refetch()}>Try again</Button>
+      </div>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-display font-bold">Dashboard</h1>
+        <Alert variant="destructive">
+          <AlertTitle>Dashboard data is unavailable</AlertTitle>
+          <AlertDescription>Please try again in a moment.</AlertDescription>
+        </Alert>
+        <Button onClick={() => void refetch()}>Try again</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
