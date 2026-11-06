@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Esports Tournament Platform"
+version = "1.0.0"
+id = "artifacts/tournament-app"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22521
+
+[services.development]
+run = "pnpm --filter @workspace/tournament-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tournament-app", "run", "build" ]
+publicDir = "artifacts/tournament-app/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22521"
+BASE_PATH = "/"

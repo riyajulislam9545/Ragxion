@@ -1,0 +1,1081 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Esports Tournament Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: users
+    description: User profile and wallet operations
+  - name: tournaments
+    description: Tournament management
+  - name: registrations
+    description: Tournament registrations
+  - name: transactions
+    description: Transaction history
+  - name: withdrawals
+    description: Withdrawal requests
+  - name: deposits
+    description: Manual deposit requests
+  - name: admin
+    description: Admin operations
+  - name: Storage
+    description: Object storage upload and serving endpoints.
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ─── User / Wallet ───────────────────────────────────────────────────────────
+  /users/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: Get current user profile and wallet balance
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+
+    put:
+      operationId: upsertMe
+      tags: [users]
+      summary: Create or update current user profile (JIT provisioning)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/me/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [users]
+      summary: Get dashboard summary - wallet balance, active tournaments, stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  # ─── Deposit Requests ─────────────────────────────────────────────────────────
+  /users/me/deposit-request:
+    post:
+      operationId: submitDepositRequest
+      tags: [deposits]
+      summary: Submit a manual deposit request (bKash/Nagad). Balance is NOT added until admin approves.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositRequestInput"
+      responses:
+        "201":
+          description: Deposit request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositRequest"
+        "400":
+          description: Invalid input or duplicate transaction ID
+        "401":
+          description: Unauthorized
+
+  /users/me/deposits:
+    get:
+      operationId: getMyDeposits
+      tags: [deposits]
+      summary: Get current user's deposit request history
+      responses:
+        "200":
+          description: List of deposit requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DepositRequest"
+
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Missing or invalid required fields
+        "401":
+          description: Unauthorized
+        "500":
+          description: Failed to generate upload URL
+
+  /storage/public-objects/{filePath}:
+    get:
+      tags: [Storage]
+      operationId: getPublicObject
+      summary: Serve a public asset
+      parameters:
+        - name: filePath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: File not found
+
+  /storage/objects/{objectPath}:
+    get:
+      tags: [Storage]
+      operationId: getStorageObject
+      summary: Serve an uploaded object
+      parameters:
+        - name: objectPath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Object content
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Object not found
+
+  # ─── Tournaments ─────────────────────────────────────────────────────────────
+  /tournaments:
+    get:
+      operationId: listTournaments
+      tags: [tournaments]
+      summary: List all tournaments with optional status filter
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [upcoming, registration_open, registration_closed, ongoing, completed]
+      responses:
+        "200":
+          description: List of tournaments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tournament"
+
+    post:
+      operationId: createTournament
+      tags: [tournaments]
+      summary: Admin - create a new tournament
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentInput"
+      responses:
+        "201":
+          description: Created tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "403":
+          description: Forbidden - admin only
+
+  /tournaments/{id}:
+    get:
+      operationId: getTournament
+      tags: [tournaments]
+      summary: Get tournament details including registrations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tournament details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDetail"
+        "404":
+          description: Not found
+
+    patch:
+      operationId: updateTournament
+      tags: [tournaments]
+      summary: Admin - update tournament fields or advance status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentUpdate"
+      responses:
+        "200":
+          description: Updated tournament
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "403":
+          description: Forbidden - admin only
+
+  /tournaments/{id}/declare-winners:
+    post:
+      operationId: declareWinners
+      tags: [tournaments]
+      summary: Admin - declare winners and distribute prize money
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WinnersInput"
+      responses:
+        "200":
+          description: Winners declared and prizes distributed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tournament"
+        "403":
+          description: Forbidden - admin only
+
+  # ─── Registrations ───────────────────────────────────────────────────────────
+  /tournaments/{id}/register:
+    post:
+      operationId: registerForTournament
+      tags: [registrations]
+      summary: Register current user's team for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationInput"
+      responses:
+        "201":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+        "400":
+          description: Insufficient balance, already registered, slots full, or deadline passed
+        "401":
+          description: Unauthorized
+
+  /tournaments/{id}/registrations:
+    get:
+      operationId: getTournamentRegistrations
+      tags: [registrations]
+      summary: List all registrations for a tournament
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of registrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Registration"
+
+  /users/me/registrations:
+    get:
+      operationId: getMyRegistrations
+      tags: [registrations]
+      summary: Get current user's tournament registrations
+      responses:
+        "200":
+          description: List of registrations with tournament info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MyRegistration"
+
+  # ─── Transactions ─────────────────────────────────────────────────────────────
+  /users/me/transactions:
+    get:
+      operationId: getMyTransactions
+      tags: [transactions]
+      summary: Get current user's transaction history
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  # ─── Withdrawals ─────────────────────────────────────────────────────────────
+  /withdrawals:
+    post:
+      operationId: requestWithdrawal
+      tags: [withdrawals]
+      summary: Request a withdrawal to bKash/Nagad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalInput"
+      responses:
+        "201":
+          description: Withdrawal request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Withdrawal"
+        "400":
+          description: Insufficient balance or below minimum amount
+        "401":
+          description: Unauthorized
+
+  /users/me/withdrawals:
+    get:
+      operationId: getMyWithdrawals
+      tags: [withdrawals]
+      summary: Get current user's withdrawal requests
+      responses:
+        "200":
+          description: List of withdrawal requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Withdrawal"
+
+  # ─── Admin ───────────────────────────────────────────────────────────────────
+  /admin/deposits:
+    get:
+      operationId: adminListDeposits
+      tags: [admin]
+      summary: Admin - list all deposit requests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        "200":
+          description: List of deposit requests with user info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DepositRequestAdmin"
+        "403":
+          description: Forbidden - admin only
+
+  /admin/deposits/{id}/approve:
+    post:
+      operationId: adminApproveDeposit
+      tags: [admin]
+      summary: Admin - approve a deposit request and credit balance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deposit approved and balance credited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositRequest"
+        "403":
+          description: Forbidden - admin only
+        "404":
+          description: Not found
+
+  /admin/deposits/{id}/reject:
+    post:
+      operationId: adminRejectDeposit
+      tags: [admin]
+      summary: Admin - reject a deposit request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectDepositInput"
+      responses:
+        "200":
+          description: Deposit rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositRequest"
+        "403":
+          description: Forbidden - admin only
+
+  /admin/withdrawals:
+    get:
+      operationId: adminListWithdrawals
+      tags: [admin]
+      summary: Admin - list all withdrawal requests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, completed, rejected]
+      responses:
+        "200":
+          description: List of withdrawal requests with user info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WithdrawalAdmin"
+        "403":
+          description: Forbidden - admin only
+
+  /admin/withdrawals/{id}/process:
+    patch:
+      operationId: processWithdrawal
+      tags: [admin]
+      summary: Admin - approve or reject a withdrawal request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawalProcessInput"
+      responses:
+        "200":
+          description: Withdrawal processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Withdrawal"
+        "403":
+          description: Forbidden - admin only
+
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      summary: Admin - list all users with balances
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "403":
+          description: Forbidden - admin only
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Admin - platform-wide statistics
+      responses:
+        "200":
+          description: Platform stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+        "403":
+          description: Forbidden - admin only
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    # ─── User ─────────────────────────────────────────────────────────────────
+    User:
+      type: object
+      required: [id, clerkId, walletBalance, isAdmin, createdAt]
+      properties:
+        id:
+          type: integer
+        clerkId:
+          type: string
+        arenaId:
+          type: ["string", "null"]
+        username:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        inGameName:
+          type: ["string", "null"]
+        walletBalance:
+          type: number
+        isAdmin:
+          type: boolean
+        createdAt:
+          type: string
+
+    UserInput:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        inGameName:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required: [user, activeRegistrations, totalWon, totalSpent, recentTransactions, pendingDeposits]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        activeRegistrations:
+          type: integer
+        totalWon:
+          type: number
+        totalSpent:
+          type: number
+        recentTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        pendingDeposits:
+          type: integer
+
+    # ─── Deposit Request ───────────────────────────────────────────────────────
+    DepositRequest:
+      type: object
+      required: [id, userId, amount, method, transactionId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        amount:
+          type: number
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        adminNote:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    DepositRequestInput:
+      type: object
+      required: [amount, method, transactionId]
+      properties:
+        amount:
+          type: number
+          minimum: 10
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        transactionId:
+          type: string
+          minLength: 1
+
+    DepositRequestAdmin:
+      type: object
+      required: [id, userId, amount, method, transactionId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        arenaId:
+          type: ["string", "null"]
+        username:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        amount:
+          type: number
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        adminNote:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    RejectDepositInput:
+      type: object
+      properties:
+        adminNote:
+          type: string
+
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+        contentType:
+          type: string
+          minLength: 1
+
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+        objectPath:
+          type: string
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+
+    # ─── Tournament ───────────────────────────────────────────────────────────
+    Tournament:
+      type: object
+      required: [id, gameName, teamSize, maxSlots, entryFee, status, registeredCount, estimatedPrizePool, createdAt]
+      properties:
+        id:
+          type: integer
+        gameName:
+          type: string
+        teamSize:
+          type: string
+          enum: [solo, duo, squad]
+        maxSlots:
+          type: integer
+        entryFee:
+          type: number
+        basePrize1st:
+          type: number
+        basePrize2nd:
+          type: number
+        basePrize3rd:
+          type: number
+        finalPrize1st:
+          type: ["number", "null"]
+        finalPrize2nd:
+          type: ["number", "null"]
+        finalPrize3rd:
+          type: ["number", "null"]
+        prizePercent1st:
+          type: number
+        prizePercent2nd:
+          type: number
+        prizePercent3rd:
+          type: number
+        registrationDeadline:
+          type: string
+        status:
+          type: string
+          enum: [upcoming, registration_open, registration_closed, ongoing, completed]
+        registeredCount:
+          type: integer
+        estimatedPrizePool:
+          type: number
+        rules:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        finalInformation:
+          type: ["string", "null"]
+        winner1stId:
+          type: ["integer", "null"]
+        winner2ndId:
+          type: ["integer", "null"]
+        winner3rdId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    TournamentDetail:
+      type: object
+      required: [tournament, registrations]
+      properties:
+        tournament:
+          $ref: "#/components/schemas/Tournament"
+        registrations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Registration"
+        myRegistration:
+          $ref: "#/components/schemas/Registration"
+
+    TournamentInput:
+      type: object
+      required: [gameName, teamSize, maxSlots, entryFee, basePrize1st, basePrize2nd, basePrize3rd, registrationDeadline]
+      properties:
+        gameName:
+          type: string
+        teamSize:
+          type: string
+          enum: [solo, duo, squad]
+        maxSlots:
+          type: integer
+        entryFee:
+          type: number
+        basePrize1st:
+          type: number
+        basePrize2nd:
+          type: number
+        basePrize3rd:
+          type: number
+        prizePercent1st:
+          type: number
+          default: 50
+        prizePercent2nd:
+          type: number
+          default: 30
+        prizePercent3rd:
+          type: number
+          default: 20
+        registrationDeadline:
+          type: string
+        rules:
+          type: string
+        status:
+          type: string
+          enum: [upcoming, registration_open]
+        imageUrl:
+          type: string
+          description: Uploaded tournament artwork storage path
+
+    TournamentUpdate:
+      type: object
+      properties:
+        gameName:
+          type: string
+        teamSize:
+          type: string
+          enum: [solo, duo, squad]
+        maxSlots:
+          type: integer
+        entryFee:
+          type: number
+        basePrize1st:
+          type: number
+        basePrize2nd:
+          type: number
+        basePrize3rd:
+          type: number
+        prizePercent1st:
+          type: number
+        prizePercent2nd:
+          type: number
+        prizePercent3rd:
+          type: number
+        registrationDeadline:
+          type: string
+        status:
+          type: string
+          enum: [upcoming, registration_open, registration_closed, ongoing, completed]
+        rules:
+          type: string
+        imageUrl:
+          type: string
+          description: Uploaded tournament artwork storage path
+        finalInformation:
+          type: string
+          description: Final match instructions published after registration closes
+
+    WinnersInput:
+      type: object
+      required: [winner1stRegistrationId]
+      properties:
+        winner1stRegistrationId:
+          type: integer
+        winner2ndRegistrationId:
+          type: ["integer", "null"]
+        winner3rdRegistrationId:
+          type: ["integer", "null"]
+
+    # ─── Registration ─────────────────────────────────────────────────────────
+    Registration:
+      type: object
+      required: [id, tournamentId, userId, teamName, registeredAt]
+      properties:
+        id:
+          type: integer
+        tournamentId:
+          type: integer
+        userId:
+          type: integer
+        teamName:
+          type: string
+        username:
+          type: ["string", "null"]
+        isWinner:
+          type: boolean
+        prizeWon:
+          type: ["number", "null"]
+        registeredAt:
+          type: string
+
+    MyRegistration:
+      type: object
+      required: [id, tournamentId, teamName, registeredAt, tournament]
+      properties:
+        id:
+          type: integer
+        tournamentId:
+          type: integer
+        teamName:
+          type: string
+        registeredAt:
+          type: string
+        tournament:
+          $ref: "#/components/schemas/Tournament"
+
+    RegistrationInput:
+      type: object
+      required: [teamName]
+      properties:
+        teamName:
+          type: string
+          minLength: 1
+
+    # ─── Transaction ──────────────────────────────────────────────────────────
+    Transaction:
+      type: object
+      required: [id, userId, amount, type, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        amount:
+          type: number
+        type:
+          type: string
+          enum: [recharge, fee_paid, prize_won, withdrawal]
+        reference:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    # ─── Withdrawal ───────────────────────────────────────────────────────────
+    Withdrawal:
+      type: object
+      required: [id, userId, amount, method, accountNumber, status, requestedAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        amount:
+          type: number
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        accountNumber:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, rejected]
+        adminNote:
+          type: ["string", "null"]
+        requestedAt:
+          type: string
+
+    WithdrawalInput:
+      type: object
+      required: [amount, method, accountNumber]
+      properties:
+        amount:
+          type: number
+          minimum: 100
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        accountNumber:
+          type: string
+          minLength: 1
+
+    WithdrawalAdmin:
+      type: object
+      required: [id, userId, amount, method, accountNumber, status, requestedAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        username:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        amount:
+          type: number
+        method:
+          type: string
+          enum: [bKash, Nagad]
+        accountNumber:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, rejected]
+        adminNote:
+          type: ["string", "null"]
+        requestedAt:
+          type: string
+
+    WithdrawalProcessInput:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
+        adminNote:
+          type: string
+
+    # ─── Admin ────────────────────────────────────────────────────────────────
+    AdminStats:
+      type: object
+      required: [totalUsers, totalTournaments, activeTournaments, totalPrizeDistributed, totalFeesCollected, pendingWithdrawals, pendingWithdrawalAmount, pendingDeposits, pendingDepositAmount]
+      properties:
+        totalUsers:
+          type: integer
+        totalTournaments:
+          type: integer
+        activeTournaments:
+          type: integer
+        totalPrizeDistributed:
+          type: number
+        totalFeesCollected:
+          type: number
+        pendingWithdrawals:
+          type: integer
+        pendingWithdrawalAmount:
+          type: number
+        pendingDeposits:
+          type: integer
+        pendingDepositAmount:
+          type: number
