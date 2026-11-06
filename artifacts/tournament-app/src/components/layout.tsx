@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useClerk, useUser, Show } from "@clerk/react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Trophy, Home, LayoutDashboard, Swords, User as UserIcon, ShieldAlert, LogOut, Wallet, Menu } from "lucide-react";
 import { useUpsertMe, useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
@@ -15,24 +16,76 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, isLoaded, isSignedIn } = useUser();
   const queryClient = useQueryClient();
   const upsertMe = useUpsertMe();
-  const { data: dbUser, isLoading: isUserLoading } = useGetMe({
+  const provisioningUserId = useRef<string | null>(null);
+  const {
+    data: dbUser,
+    isLoading: isUserLoading,
+    isError: isUserError,
+    error: userError,
+  } = useGetMe({
     query: { enabled: Boolean(isLoaded && isSignedIn), queryKey: getGetMeQueryKey() },
   });
+  const isProfileMissing =
+    typeof userError === "object" &&
+    userError !== null &&
+    "status" in userError &&
+    userError.status === 404;
 
   useEffect(() => {
-    if (isSignedIn && user && !isUserLoading) {
-      upsertMe.mutate({
+    if (!isSignedIn || !user) {
+      provisioningUserId.current = null;
+      return;
+    }
+
+    if (
+      isUserLoading ||
+      dbUser ||
+      !isUserError ||
+      !isProfileMissing ||
+      provisioningUserId.current === user.id
+    ) {
+      return;
+    }
+
+    provisioningUserId.current = user.id;
+    upsertMe.mutate(
+      {
         data: {
           email: user.primaryEmailAddress?.emailAddress,
           username: user.username || user.firstName || undefined,
-        }
-      }, {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
         },
-      });
-    }
-  }, [isSignedIn, user, isUserLoading, queryClient, upsertMe.mutate]);
+      },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        },
+      },
+    );
+  }, [
+    isSignedIn,
+    user,
+    isUserLoading,
+    isUserError,
+    isProfileMissing,
+    userError,
+    dbUser,
+    queryClient,
+    upsertMe.mutate,
+  ]);
+
+  const isProvisioning = Boolean(
+    isSignedIn &&
+      user &&
+      isUserError &&
+      isProfileMissing &&
+      !upsertMe.isError,
+  );
+  const profileError =
+    isSignedIn && isUserError && !isProvisioning && !dbUser
+      ? upsertMe.error ?? userError
+      : upsertMe.isError && !dbUser
+        ? upsertMe.error
+        : null;
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -104,6 +157,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       Sign Out
     </Button>
   );
+
+  if (isSignedIn && (!isLoaded || isUserLoading || isProvisioning || (!dbUser && !profileError))) {
+    return (
+      <div className="min-h-[100dvh] space-y-6 bg-background p-6">
+        <Skeleton className="h-10 w-48" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {[1, 2, 3, 4].map((item) => (
+            <Skeleton key={item} className="h-28 rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-80 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <div className="min-h-[100dvh] bg-background p-6">
+        <Alert variant="destructive" className="mx-auto max-w-2xl">
+          <AlertTitle>Could not load your account</AlertTitle>
+          <AlertDescription>
+            {profileError instanceof Error
+              ? profileError.message
+              : "The server could not prepare your profile. Please refresh and try again."}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[100dvh] min-w-0 bg-background">
